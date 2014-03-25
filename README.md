@@ -20,7 +20,8 @@ Requirements
 collectd must have the Python plugin installed. See (<http://collectd.org/documentation/manpages/collectd-python.5.shtml>)
 
 *pysphere*
-pyshere lib must be installed. See (<https://code.google.com/p/pysphere/>)
+
+pyshere library must be installed. See (<https://code.google.com/p/pysphere/>)
 
 Example
 -------
