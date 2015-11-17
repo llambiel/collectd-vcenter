@@ -5,8 +5,8 @@
 
 import collectd
 from pysphere import VIServer
-import time        
 
+RUN = 0
 
 METRIC_TYPES = {
     'datastorecapacity': ('z_dscapacity', 'current'),
@@ -55,7 +55,7 @@ METRIC_TYPES = {
     'clustercpuusagepercent': ('c_cpu_usage_percent', 'current'),
     'clustertotalmemory': ('c_total_memory', 'current'),
     'clustercputotal': ('c_cpu_total', 'current'),
- 
+
 }
 
 METRIC_DELIM = '.'
@@ -73,11 +73,11 @@ def get_stats():
 
         try:
             server.connect(vcenter, USERNAME, PASSWORD)
-        except:
+        except Exception:
             logger('warn', "failed to connect to %s" % (vcenter))
             continue
-        
-        #get datastores
+
+        # get datastores
         for ds, dsname in server.get_datastores().items():
 
             DatastoreCapacity = 0
@@ -85,21 +85,21 @@ def get_stats():
             DatastoreUsagePercent = 0
 
             try:
-                logger('verb', "get_stats calls Datastore metrics query on vcenter: %s for datastore: %s" % (vcenter,dsname))
+                logger('verb', "get_stats calls Datastore metrics query on vcenter: %s for datastore: %s" % (vcenter, dsname))
 
-                props = server._retrieve_properties_traversal(property_names=['name', 'summary.capacity', 'summary.freeSpace'],from_node=ds,obj_type="Datastore")
+                props = server._retrieve_properties_traversal(property_names=['name', 'summary.capacity', 'summary.freeSpace'], from_node=ds, obj_type="Datastore")
 
                 for prop_set in props:
-                    #mor = prop_set.Obj #in case you need it
+                    # mor = prop_set.Obj #in case you need it
                         for prop in prop_set.PropSet:
                             if prop.Name == "summary.capacity":
-                                DatastoreCapacity = (prop.Val/1048576)
+                                DatastoreCapacity = (prop.Val / 1048576)
                             elif prop.Name == "summary.freeSpace":
-                                DatastoreFreespace = (prop.Val/1048576)
-            except:
-                logger('warn', "failed to get Datastore metrics value on vcenter: %s for datastore: %s" % (vcenter,dsname))
+                                DatastoreFreespace = (prop.Val / 1048576)
+            except Exception:
+                logger('warn', "failed to get Datastore metrics value on vcenter: %s for datastore: %s" % (vcenter, dsname))
 
-            DatastoreUsagePercent = (((DatastoreCapacity - DatastoreFreespace) * 100)/DatastoreCapacity)
+            DatastoreUsagePercent = (((DatastoreCapacity - DatastoreFreespace) * 100) / DatastoreCapacity)
 
             metricnameZoneDatastoreCapacity = METRIC_DELIM.join([vcenter.lower(), "datastores",  dsname.lower(), 'datastorecapacity'])
             metricnameZoneDatastoreFreespace = METRIC_DELIM.join([vcenter.lower(), "datastores", dsname.lower(), 'datastorefreespace'])
@@ -109,8 +109,8 @@ def get_stats():
                 stats[metricnameZoneDatastoreCapacity] = DatastoreCapacity
                 stats[metricnameZoneDatastoreFreespace] = DatastoreFreespace
                 stats[metricnameZoneDatastoreUsagePercent] = DatastoreUsagePercent
-            except (TypeError, ValueError), e:
-                pass        
+            except (TypeError, ValueError):
+                pass
 
         ZoneDatacentersCount = 0
         ZoneClustersCount = 0
@@ -128,7 +128,7 @@ def get_stats():
         logger('verb', "get_stats completed get_datacenters query on vcenter: %s" % (vcenter))
         ZoneDatacentersCount = len(datacenters)
 
-        for d,dname in server.get_datacenters().items():
+        for d, dname in server.get_datacenters().items():
 
             if "." in dname:
                 dname = dname.split(".")[0]
@@ -143,13 +143,13 @@ def get_stats():
             DatacenterTotalMemory = 0
             DatacenterCpuTotal = 0
 
-            logger('verb', "get_stats calls get_clusters query on vcenter: %s for datacenter: %s" % (vcenter,dname))
+            logger('verb', "get_stats calls get_clusters query on vcenter: %s for datacenter: %s" % (vcenter, dname))
             clusters = server.get_clusters(d)
-            logger('verb', "get_stats completed get_clusters query on vcenter: %s for datacenter: %s" % (vcenter,dname))
+            logger('verb', "get_stats completed get_clusters query on vcenter: %s for datacenter: %s" % (vcenter, dname))
             DatacenterClustersCount = len(clusters)
             ZoneClustersCount = ZoneClustersCount + DatacenterClustersCount
 
-            for c,cname in server.get_clusters(d).items():
+            for c, cname in server.get_clusters(d).items():
 
                 if "." in cname:
                     cname = cname.split(".")[0]
@@ -162,40 +162,39 @@ def get_stats():
                 ClusterStoppedVMS = 0
                 ClusterTotalVMS = 0
 
-                logger('verb', "get_stats calls get_hosts query on vcenter: %s for cluster: %s" % (vcenter,cname))
+                logger('verb', "get_stats calls get_hosts query on vcenter: %s for cluster: %s" % (vcenter, cname))
                 hosts = server.get_hosts(c)
-                logger('verb', "get_stats completed get_hosts query on vcenter: %s for cluster: %s" % (vcenter,cname))
+                logger('verb', "get_stats completed get_hosts query on vcenter: %s for cluster: %s" % (vcenter, cname))
                 ClusterHostsCount = len(hosts)
                 DatacenterHostsCount = DatacenterHostsCount + ClusterHostsCount
                 ZoneHostsCount = ZoneHostsCount + DatacenterHostsCount
 
                 for h, hname in server.get_hosts(c).items():
-                    
+
                     HostMemoryUsage = 0
                     HostCpuUsage = 0
                     HostTotalMemory = 0
                     HostNumCpuCores = 0
                     HostMhzPerCore = 0
                     HostStatus = ''
-                        
+
                     if "." in hname:
                         hname = hname.split(".")[0]
 
                     try:
-                        logger('verb', "get_stats calls Host CPU and Memory metrics query on vcenter: %s for host: %s" % (vcenter,hname))
-                    
-                        props = server._retrieve_properties_traversal(property_names=['name', 'summary.overallStatus', 'summary.quickStats.overallMemoryUsage', 'summary.quickStats.overallCpuUsage','summary.hardware.memorySize', 'summary.hardware.numCpuCores', 'summary.hardware.cpuMhz'],from_node=h ,obj_type="HostSystem")
+                        logger('verb', "get_stats calls Host CPU and Memory metrics query on vcenter: %s for host: %s" % (vcenter, hname))
 
+                        props = server._retrieve_properties_traversal(property_names=['name', 'summary.overallStatus', 'summary.quickStats.overallMemoryUsage', 'summary.quickStats.overallCpuUsage', 'summary.hardware.memorySize', 'summary.hardware.numCpuCores', 'summary.hardware.cpuMhz'], from_node=h, obj_type="HostSystem")
 
                         for prop_set in props:
-                            #mor = prop_set.Obj #in case you need it
+                            # mor = prop_set.Obj #in case you need it
                             for prop in prop_set.PropSet:
-                                if prop.Name == "summary.quickStats.overallMemoryUsage": 
-                                    HostMemoryUsage  = prop.Val
-                                elif prop.Name == "summary.quickStats.overallCpuUsage": 
+                                if prop.Name == "summary.quickStats.overallMemoryUsage":
+                                    HostMemoryUsage = prop.Val
+                                elif prop.Name == "summary.quickStats.overallCpuUsage":
                                     HostCpuUsage = prop.Val
-                                elif prop.Name == "summary.hardware.memorySize": 
-                                    HostTotalMemory = (prop.Val/1048576)
+                                elif prop.Name == "summary.hardware.memorySize":
+                                    HostTotalMemory = (prop.Val / 1048576)
                                 elif prop.Name == "summary.hardware.numCpuCores":
                                     HostNumCpuCores = prop.Val
                                 elif prop.Name == "summary.hardware.cpuMhz":
@@ -210,29 +209,29 @@ def get_stats():
                                         HostStatus = 2
                                     elif HostStatus == "red":
                                         HostStatus = 3
-                    except:
-                        logger('warn', "failed to get Host CPU and Memory metrics value on vcenter: %s for host: %s" % (vcenter,hname))
+                    except Exception:
+                        logger('warn', "failed to get Host CPU and Memory metrics value on vcenter: %s for host: %s" % (vcenter, hname))
 
                     try:
-                        logger('verb', "get_stats calls HostRunningVMS query on vcenter: %s for host: %s" % (vcenter,hname))
+                        logger('verb', "get_stats calls HostRunningVMS query on vcenter: %s for host: %s" % (vcenter, hname))
                         HostRunningVMS = len(server.get_registered_vms(h, status='poweredOn'))
-                    except:
+                    except Exception:
                         logger('warn', "failed to get nb of running VMS value on %s" % (hname))
                     try:
-                        logger('verb', "get_stats calls HostStoppedVMS query on vcenter: %s for host: %s" % (vcenter,hname))
+                        logger('verb', "get_stats calls HostStoppedVMS query on vcenter: %s for host: %s" % (vcenter, hname))
                         HostStoppedVMS = len(server.get_registered_vms(h, status='poweredOff'))
-                    except:
+                    except Exception:
                         logger('warn', "failed to get nb of stopped VMS value on %s" % (hname))
                     try:
-                        logger('verb', "get_stats calls HostTotalVMS query on vcenter: %s for host: %s" % (vcenter,hname))
+                        logger('verb', "get_stats calls HostTotalVMS query on vcenter: %s for host: %s" % (vcenter, hname))
                         HostTotalVMS = len(server.get_registered_vms(h))
-                    except:
+                    except Exception:
                         logger('warn', "failed to get all VMS count on %s" % (hname))
 
                     HostCpuTotal = (HostNumCpuCores * HostMhzPerCore)
-                    HostMemoryUsagePercent = ((HostMemoryUsage * 100)/HostTotalMemory)
-                    HostCpuUsagePercent = ((HostCpuUsage * 100)/HostCpuTotal)
-                    
+                    HostMemoryUsagePercent = ((HostMemoryUsage * 100) / HostTotalMemory)
+                    HostCpuUsagePercent = ((HostCpuUsage * 100) / HostCpuTotal)
+
                     metricnameHostStatus = METRIC_DELIM.join([vcenter.lower(), dname.lower(), cname.lower(), hname.lower(), 'hoststatus'])
                     metricnameHostMemoryUsagePercent = METRIC_DELIM.join([vcenter.lower(), dname.lower(), cname.lower(), hname.lower(), 'hostmemoryusagepercent'])
                     metricnameHostCpuUsagePercent = METRIC_DELIM.join([vcenter.lower(), dname.lower(), cname.lower(), hname.lower(), 'hostcpuusagepercent'])
@@ -251,8 +250,8 @@ def get_stats():
                     ClusterRunningVMS = ClusterRunningVMS + HostRunningVMS
                     ClusterStoppedVMS = ClusterStoppedVMS + HostStoppedVMS
                     ClusterTotalVMS = ClusterTotalVMS + HostTotalVMS
-                    ClusterMemoryUsagePercent = ((ClusterMemoryUsage * 100)/ClusterTotalMemory)
-                    ClusterCpuUsagePercent = ((ClusterCpuUsage * 100)/ClusterCpuTotal)
+                    ClusterMemoryUsagePercent = ((ClusterMemoryUsage * 100) / ClusterTotalMemory)
+                    ClusterCpuUsagePercent = ((ClusterCpuUsage * 100) / ClusterCpuTotal)
 
                     try:
                         stats[metricnameHostStatus] = HostStatus
@@ -265,9 +264,8 @@ def get_stats():
                         stats[metricnameHostRunningVMS] = HostRunningVMS
                         stats[metricnameHostStoppedVMS] = HostStoppedVMS
                         stats[metricnameHostTotalVMS] = HostTotalVMS
-                    except (TypeError, ValueError), e:
+                    except (TypeError, ValueError):
                         pass
-
 
                 DatacenterRunningVMS = DatacenterRunningVMS + ClusterRunningVMS
                 DatacenterStoppedVMS = DatacenterStoppedVMS + ClusterStoppedVMS
@@ -276,9 +274,9 @@ def get_stats():
                 DatacenterCpuUsage = DatacenterCpuUsage + ClusterCpuUsage
                 DatacenterTotalMemory = DatacenterTotalMemory + ClusterTotalMemory
                 DatacenterCpuTotal = DatacenterCpuTotal + ClusterCpuTotal
-                DatacenterMemoryUsagePercent = ((DatacenterMemoryUsage * 100)/DatacenterTotalMemory)
-                DatacenterCpuUsagePercent = ((DatacenterCpuUsage * 100)/DatacenterCpuTotal)
-                
+                DatacenterMemoryUsagePercent = ((DatacenterMemoryUsage * 100) / DatacenterTotalMemory)
+                DatacenterCpuUsagePercent = ((DatacenterCpuUsage * 100) / DatacenterCpuTotal)
+
                 metricnameClusterRunningVMS = METRIC_DELIM.join([vcenter.lower(), dname.lower(), cname.lower(), 'clusterrunningvms'])
                 metricnameClusterStoppedVMS = METRIC_DELIM.join([vcenter.lower(), dname.lower(), cname.lower(), 'clusterstoppedvms'])
                 metricnameClusterTotalVMS = METRIC_DELIM.join([vcenter.lower(), dname.lower(), cname.lower(), 'clustertotalvms'])
@@ -292,16 +290,16 @@ def get_stats():
                     stats[metricnameClusterRunningVMS] = ClusterRunningVMS
                     stats[metricnameClusterStoppedVMS] = ClusterStoppedVMS
                     stats[metricnameClusterTotalVMS] = ClusterTotalVMS
-                    stats[metricnameClusterMemoryUsage] = ClusterMemoryUsage 
+                    stats[metricnameClusterMemoryUsage] = ClusterMemoryUsage
                     stats[metricnameClusterCpuUsage] = ClusterCpuUsage
                     stats[metricnameClusterMemoryUsagePercent] = ClusterMemoryUsagePercent
                     stats[metricnameClusterCpuUsagePercent] = ClusterCpuUsagePercent
                     stats[metricnameClusterTotalMemory] = ClusterTotalMemory
                     stats[metricnameClusterCpuTotal] = ClusterCpuTotal
-                except (TypeError, ValueError), e:
+                except (TypeError, ValueError):
                     pass
-           
-            #post datacenter metrics count here
+
+            # post datacenter metrics count here
 
             ZoneRunningVMS = ZoneRunningVMS + DatacenterRunningVMS
             ZoneStoppedVMS = ZoneStoppedVMS + DatacenterStoppedVMS
@@ -310,8 +308,8 @@ def get_stats():
             ZoneCpuUsage = ZoneCpuUsage + DatacenterCpuUsage
             ZoneTotalMemory = ZoneTotalMemory + DatacenterTotalMemory
             ZoneCpuTotal = ZoneCpuTotal + DatacenterCpuTotal
-            ZoneMemoryUsagePercent = ((ZoneMemoryUsage * 100)/ZoneTotalMemory)
-            ZoneCpuUsagePercent = ((ZoneCpuUsage * 100)/ZoneCpuTotal)
+            ZoneMemoryUsagePercent = ((ZoneMemoryUsage * 100) / ZoneTotalMemory)
+            ZoneCpuUsagePercent = ((ZoneCpuUsage * 100) / ZoneCpuTotal)
 
             metricnameDatacenterRunningVMS = METRIC_DELIM.join([vcenter.lower(), dname.lower(), 'datacenterrunningvms'])
             metricnameDatacenterStoppedVMS = METRIC_DELIM.join([vcenter.lower(), dname.lower(), 'datacenterstoppedvms'])
@@ -333,10 +331,10 @@ def get_stats():
                 stats[metricnameDatacenterCpuUsagePercent] = DatacenterCpuUsagePercent
                 stats[metricnameDatacenterTotalMemory] = DatacenterTotalMemory
                 stats[metricnameDatacenterCpuTotal] = DatacenterCpuTotal
-            except (TypeError, ValueError), e:
+            except (TypeError, ValueError):
                 pass
 
-        # post zone metrics count here    
+        # post zone metrics count here
         metricnameZoneRunningVMS = METRIC_DELIM.join([vcenter.lower(), 'zonerunningvms'])
         metricnameZoneStoppedVMS = METRIC_DELIM.join([vcenter.lower(), 'zonestoppedvms'])
         metricnameZoneTotalVMS = METRIC_DELIM.join([vcenter.lower(), 'zonetotalvms'])
@@ -357,81 +355,82 @@ def get_stats():
             stats[metricnameZoneCpuUsagePercent] = ZoneCpuUsagePercent
             stats[metricnameZoneTotalMemory] = ZoneTotalMemory
             stats[metricnameZoneCpuTotal] = ZoneCpuTotal
-        except (TypeError, ValueError), e:
+        except (TypeError, ValueError):
             pass
 
-
-
         metricnameZoneDatacentersCount = METRIC_DELIM.join([vcenter.lower(), 'zonedatacenterscount'])
-        metricnameZoneClustersCount = METRIC_DELIM.join([vcenter.lower(),'zoneclusterscount'])
-        metricnameZoneHostsCount = METRIC_DELIM.join([vcenter.lower(),'zonehostscount'])
-        
+        metricnameZoneClustersCount = METRIC_DELIM.join([vcenter.lower(), 'zoneclusterscount'])
+        metricnameZoneHostsCount = METRIC_DELIM.join([vcenter.lower(), 'zonehostscount'])
+
         try:
             stats[metricnameZoneDatacentersCount] = ZoneDatacentersCount
             stats[metricnameZoneClustersCount] = ZoneClustersCount
             stats[metricnameZoneHostsCount] = ZoneHostsCount
-        except (TypeError, ValueError), e:
+        except (TypeError, ValueError):
             pass
-       
 
         server.disconnect()
-    time.sleep(SLEEPTIME)
     return stats
-
 
 
 # callback configuration for module
 def configure_callback(conf):
 
-  global NAME, SLEEPTIME, VCENTERLIST, USERNAME, PASSWORD, VERBOSE_LOGGING
-  NAME = 'Vcenter'
-  SLEEPTIME = 120
-  VCENTERLIST = ''
-  USERNAME = ''
-  PASSWORD = ''
-  VERBOSE_LOGGING = False
+    global NAME, VCENTERLIST, USERNAME, PASSWORD, VERBOSE_LOGGING, SKIP
+    NAME = 'Vcenter'
+    VCENTERLIST = ''
+    USERNAME = ''
+    PASSWORD = ''
+    VERBOSE_LOGGING = False
+    SKIP = 10
 
-  for node in conf.children:
-    if node.key == "Vcenter":
-      VCENTERLIST = node.values[0]
-    elif node.key == "Username":
-      USERNAME = node.values[0]
-    elif node.key == "Password":
-      PASSWORD = node.values[0]
-    elif node.key == "Verbose":
-      VERBOSE_LOGGING = bool(node.values[0])
-    else:
-      logger('warn', 'Unknown config key: %s' % node.key)
+    for node in conf.children:
+        if node.key == "Vcenter":
+            VCENTERLIST = node.values[0]
+        elif node.key == "Username":
+            USERNAME = node.values[0]
+        elif node.key == "Password":
+            PASSWORD = node.values[0]
+        elif node.key == "Verbose":
+            VERBOSE_LOGGING = bool(node.values[0])
+        elif node.key == "Skip":
+            SKIP = int(node.values[0])
+        else:
+            logger('warn', 'Unknown config key: %s' % node.key)
 
 
 def read_callback():
-  logger('verb', "beginning read_callback")
-  info = get_stats()
+    global RUN, SKIP
+    RUN += 1
+    if RUN % SKIP != 1:
+        return
+    logger('verb', "beginning read_callback")
+    info = get_stats()
 
-  if not info:
-    logger('warn', "%s: No data received" % NAME)
-    return
+    if not info:
+        logger('warn', "%s: No data received" % NAME)
+        return
 
-  for key,value in info.items():
-    key_prefix = ''
-    key_root = key
-    logger('verb', "read_callback key %s" % (key))
-    logger('verb', "read_callback value %s" % (value))
-    if not value in METRIC_TYPES:
-      try:
-        key_prefix, key_root = key.rsplit(METRIC_DELIM,1)
-      except ValueError, e:
-        pass
-    if not key_root in METRIC_TYPES:
-      continue
+    for key, value in info.items():
+        key_prefix = ''
+        key_root = key
+        logger('verb', "read_callback key %s" % (key))
+        logger('verb', "read_callback value %s" % (value))
+        if value not in METRIC_TYPES:
+            try:
+                key_prefix, key_root = key.rsplit(METRIC_DELIM, 1)
+            except ValueError:
+                pass
+        if key_root not in METRIC_TYPES:
+            continue
 
-    key_root, val_type = METRIC_TYPES[key_root]
-    key_name = METRIC_DELIM.join([key_prefix, key_root])
-    logger('verb', "key_name %s" % (key_name))
-    val = collectd.Values(plugin=NAME, type=val_type)
-    val.type_instance = key_name
-    val.values = [ value ]
-    val.dispatch()
+        key_root, val_type = METRIC_TYPES[key_root]
+        key_name = METRIC_DELIM.join([key_prefix, key_root])
+        logger('verb', "key_name %s" % (key_name))
+        val = collectd.Values(plugin=NAME, type=val_type)
+        val.type_instance = key_name
+        val.values = [value]
+        val.dispatch()
 
 
 # logging function
